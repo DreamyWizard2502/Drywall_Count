@@ -4,6 +4,7 @@
 import { html, useState, useEffect, useRef } from './lib.js';
 import { app, rerender, current, goStage, openEdit, cancelStageEdit } from './state.js';
 import { STAGES, num, norm } from './model.js';
+import { t, tv, canon } from './i18n.js';
 
 /* ---------- pop-up questions ---------- */
 
@@ -18,7 +19,7 @@ export function ask({ title, body = null, icon = null, buttons, input = null }) 
   });
 }
 
-export async function askText({ title, body = null, value = '', placeholder = '', okLabel = 'Save', cancelLabel = 'Cancel' }) {
+export async function askText({ title, body = null, value = '', placeholder = '', okLabel = t('Save'), cancelLabel = t('Cancel') }) {
   const r = await ask({
     title,
     body,
@@ -32,7 +33,7 @@ export async function askText({ title, body = null, value = '', placeholder = ''
 }
 
 export const tell = (title, body, icon = null) =>
-  ask({ title, body, icon, buttons: [{ label: 'OK', value: true, kind: 'primary' }] });
+  ask({ title, body, icon, buttons: [{ label: t('OK'), value: true, kind: 'primary' }] });
 
 function closeDialog(value) {
   const d = app.ui.dialog;
@@ -52,9 +53,9 @@ export function DialogHost() {
     document.body.classList.toggle('no-scroll', !!d);
     if (!d) return;
     setArmed(false);
-    const t = setTimeout(() => setArmed(true), 450);
+    const timer = setTimeout(() => setArmed(true), 450);
     if (d.input && inputRef.current) setTimeout(() => inputRef.current && inputRef.current.focus(), 80);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [d && d.id]);
   if (!d) return null;
   return html`<div class="overlay" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
@@ -88,15 +89,15 @@ export function toast(msg, { undo = null, kind = '' } = {}) {
 }
 
 export function ToastHost() {
-  const t = app.ui.toast;
-  if (!t) return null;
-  return html`<div class=${`toast ${t.kind}`} role="status">
-    <span>${t.msg}</span>
-    ${t.undo && html`<button type="button" class="toast-undo" onClick=${() => {
+  const msg = app.ui.toast;
+  if (!msg) return null;
+  return html`<div class=${`toast ${msg.kind}`} role="status">
+    <span>${msg.msg}</span>
+    ${msg.undo && html`<button type="button" class="toast-undo" onClick=${() => {
       app.ui.toast = null;
-      t.undo();
+      msg.undo();
       rerender();
-    }}>Undo</button>`}
+    }}>${t('Undo')}</button>`}
   </div>`;
 }
 
@@ -106,40 +107,40 @@ export function ToastHost() {
 // Resolves true only if he gets all the way through and taps OK.
 export async function tripleVerify({ name, question, summary, getNote, setNote }) {
   const sure = await ask({
-    title: question || `Are you sure you want to complete ${name}?`,
+    title: question || t('Are you sure you want to complete {name}?', { name }),
     body: summary,
     buttons: [
-      { label: 'Yes, it’s complete', value: true, kind: 'success' },
-      { label: 'No, go back', value: false, kind: 'secondary' },
+      { label: t('Yes, it’s complete'), value: true, kind: 'success' },
+      { label: t('No, go back'), value: false, kind: 'secondary' },
     ],
   });
   if (!sure) return false;
 
   const existing = getNote();
   const wantsNote = await ask({
-    title: `Do you have any notes for ${name}?`,
+    title: t('Do you have any notes for {name}?', { name }),
     body: existing ? html`<p class="note-box">📝 ${existing}</p>` : null,
     buttons: existing
       ? [
-          { label: 'No, the note is good', value: false, kind: 'primary' },
-          { label: 'Yes, change the note', value: true, kind: 'secondary' },
+          { label: t('No, the note is good'), value: false, kind: 'primary' },
+          { label: t('Yes, change the note'), value: true, kind: 'secondary' },
         ]
       : [
-          { label: 'No notes', value: false, kind: 'primary' },
-          { label: 'Yes, add a note', value: true, kind: 'secondary' },
+          { label: t('No notes'), value: false, kind: 'primary' },
+          { label: t('Yes, add a note'), value: true, kind: 'secondary' },
         ],
   });
   if (wantsNote) {
-    const text = await askText({ title: `Notes for ${name}`, value: existing, placeholder: 'Type your note…', okLabel: 'Save note' });
+    const text = await askText({ title: t('Notes for {name}', { name }), value: existing, placeholder: t('Type your note…'), okLabel: t('Save note') });
     if (text !== null) setNote(text.trim());
   }
 
   return ask({
     icon: '✅',
-    title: `${cap(name)} complete`,
+    title: t('{name} complete', { name: cap(name) }),
     buttons: [
-      { label: 'OK', value: true, kind: 'primary' },
-      { label: 'Wait, I need to change something', value: false, kind: 'secondary' },
+      { label: t('OK'), value: true, kind: 'primary' },
+      { label: t('Wait, I need to change something'), value: false, kind: 'secondary' },
     ],
   });
 }
@@ -154,13 +155,13 @@ export async function navigate(stage) {
   const c = current();
   const snap = openEdit(c);
   if (snap && snap.stage !== stage) {
-    const title = STAGES.find((s) => s.key === snap.stage).title;
+    const title = t(STAGES.find((s) => s.key === snap.stage).title);
     const choice = await ask({
-      title: `You started changing ${title}`,
-      body: 'Finish your changes (tap the green Complete button), or undo them.',
+      title: t('You started changing {title}', { title }),
+      body: t('Finish your changes (tap the green Complete button), or undo them.'),
       buttons: [
-        { label: `Go back to ${title}`, value: 'back', kind: 'primary' },
-        { label: 'Undo my changes', value: 'undo', kind: 'secondary' },
+        { label: t('Go back to {title}', { title }), value: 'back', kind: 'primary' },
+        { label: t('Undo my changes'), value: 'undo', kind: 'secondary' },
       ],
     });
     if (choice === 'back') return;
@@ -175,17 +176,19 @@ export function FieldError({ msg }) {
   return msg ? html`<div class="error" role="alert">⚠️ ${msg}</div>` : null;
 }
 
-// Hot-choice chips plus "type your own".
-export function ChoiceField({ label, value, options, onChange, error, placeholder = 'Type it here', typeLabel = 'Type my own' }) {
-  const isCustom = !!value && !options.some((o) => o === value);
+// Hot-choice chips plus "type your own". Options are saved in English and
+// shown in the current language.
+export function ChoiceField({ label, value, options, onChange, error, placeholder = t('Type it here'), typeLabel = t('Type my own') }) {
+  const cv = canon(value);
+  const isCustom = !!value && !options.some((o) => o === cv);
   const [typing, setTyping] = useState(isCustom);
   const showInput = typing || isCustom;
   const inputRef = useRef();
   return html`<div class=${`field ${error ? 'has-error' : ''}`}>
     ${label && html`<div class="label">${label}</div>`}
     <div class="chips">
-      ${options.map((o) => html`<button type="button" class=${`chip ${o === value ? 'on' : ''}`}
-        aria-pressed=${o === value} onClick=${() => { setTyping(false); onChange(o); }}>${o}</button>`)}
+      ${options.map((o) => html`<button type="button" class=${`chip ${o === cv ? 'on' : ''}`}
+        aria-pressed=${o === cv} onClick=${() => { setTyping(false); onChange(o); }}>${tv(o)}</button>`)}
       <button type="button" class=${`chip chip-type ${showInput ? 'on' : ''}`} onClick=${() => {
         setTyping(true);
         if (!isCustom) onChange('');
@@ -203,16 +206,16 @@ export function Stepper({ value, onChange, error, label, unit }) {
   return html`<div class=${`field ${error ? 'has-error' : ''}`}>
     ${label && html`<div class="label">${label}</div>`}
     <div class="stepper">
-      <button type="button" class="step-btn" aria-label="One less" onClick=${() => onChange(Math.max(0, n - 1) || '')}>−</button>
+      <button type="button" class="step-btn" aria-label=${t('One less')} onClick=${() => onChange(Math.max(0, n - 1) || '')}>−</button>
       <input class="step-input" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="0" value=${value}
-        aria-label=${label || 'How many'} enterkeyhint="done"
+        aria-label=${label || t('How many')} enterkeyhint="done"
         onFocus=${(e) => e.target.select()}
         onInput=${(e) => {
           const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
           if (digits !== e.target.value) e.target.value = digits;
           onChange(digits === '' ? '' : parseInt(digits, 10));
         }} />
-      <button type="button" class="step-btn" aria-label="One more" onClick=${() => onChange(n + 1)}>+</button>
+      <button type="button" class="step-btn" aria-label=${t('One more')} onClick=${() => onChange(n + 1)}>+</button>
       ${unit && html`<span class="step-unit">${unit}</span>`}
     </div>
     <${FieldError} msg=${error} />
@@ -233,7 +236,7 @@ export function BigChoice({ value, options, onChange, error, cols = 2 }) {
   </div>`;
 }
 
-export function YesNo({ value, onChange, error, yes = 'Yes', no = 'No' }) {
+export function YesNo({ value, onChange, error, yes = t('Yes'), no = t('No') }) {
   return html`<${BigChoice} value=${value} onChange=${onChange} error=${error}
     options=${[{ value: false, label: no }, { value: true, label: yes }]} />`;
 }
@@ -249,7 +252,7 @@ export function AreaChips({ c, selected, onChange, single = false, error, flag =
     <div class="chips">
       ${c.sections.map((s) => html`<button type="button" class=${`chip ${sel.includes(s.id) ? 'on' : ''}`}
         aria-pressed=${sel.includes(s.id)} onClick=${() => toggle(s.id)}>
-        ${sel.includes(s.id) ? '✓ ' : ''}${s.name || '(unnamed)'}${flag(s) && html` <span class="chip-flag">${flag(s)}</span>`}
+        ${sel.includes(s.id) ? '✓ ' : ''}${tv(s.name) || t('(unnamed)')}${flag(s) && html` <span class="chip-flag">${flag(s)}</span>`}
       </button>`)}
     </div>
     <${FieldError} msg=${error} />
@@ -265,20 +268,22 @@ export function ActionBar({ children, hint }) {
 
 export function LockedBanner({ title, onEdit }) {
   return html`<div class="locked-banner">
-    <div><b>✅ ${title} is complete.</b><br /><span>It’s locked so nothing changes by accident.</span></div>
-    <button type="button" class="btn btn-secondary" onClick=${onEdit}>✏️ Change something here</button>
+    <div><b>✅ ${t('{title} is complete.', { title })}</b><br /><span>${t('It’s locked so nothing changes by accident.')}</span></div>
+    <button type="button" class="btn btn-secondary" onClick=${onEdit}>${t('✏️ Change something here')}</button>
   </div>`;
 }
 
 export function SummaryList({ items }) {
-  return html`<ul class="summary-list">${items.map((t) => html`<li>${t}</li>`)}</ul>`;
+  return html`<ul class="summary-list">${items.map((item) => html`<li>${item}</li>`)}</ul>`;
 }
 
 // Next number for a repeated name: "Bedroom" -> "Bedroom 2" -> "Bedroom 3"
+// ("Recámara" and "Bedroom" count as the same name).
 export function uniqueName(c, base, exceptId = null) {
-  const taken = new Set(c.sections.filter((s) => s.id !== exceptId).map((s) => norm(s.name)));
-  if (!taken.has(norm(base))) return base;
+  const k = (v) => norm(canon(v));
+  const taken = new Set(c.sections.filter((s) => s.id !== exceptId).map((s) => k(s.name)));
+  if (!taken.has(k(base))) return base;
   let i = 2;
-  while (taken.has(norm(`${base} ${i}`))) i++;
+  while (taken.has(k(`${base} ${i}`))) i++;
   return `${base} ${i}`;
 }

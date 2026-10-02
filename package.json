@@ -2,6 +2,7 @@
   "name": "drywall-count",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Count drywall room by room and text a one-page count sheet. Works offline on an iPhone.",
   "scripts": {
     "start": "npx serve -l 8080 .",

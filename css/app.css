@@ -697,3 +697,32 @@ fieldset.fs:disabled .btn-secondary, fieldset.fs:disabled .btn-add { display: no
 @media (min-width: 700px) {
   .page { padding-top: 22px; }
 }
+
+/* ---------- language ---------- */
+
+.lang-switch { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin: 0 0 8px; }
+.card .lang-switch { justify-content: flex-start; margin: 0; }
+.lang-globe { font-size: 22px; }
+.lang-switch button {
+  min-height: 46px;
+  padding: 8px 16px;
+  border-radius: 23px;
+  border: 2px solid var(--line);
+  background: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+.lang-switch button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.lang-btn small { color: var(--blue); }
+.lang-picker { padding-top: calc(48px + var(--safe-t)); }
+.lang-q { font-size: 22px; font-weight: 700; line-height: 1.4; margin: 18px 0 6px; }
+.btn-lang {
+  min-height: 96px;
+  font-size: 32px;
+  border-radius: 22px;
+  background: var(--blue);
+  color: #fff;
+  margin-bottom: 16px;
+  box-shadow: 0 6px 18px rgba(10, 98, 208, 0.3);
+}
+.btn-lang:active { background: var(--blue-dark); }

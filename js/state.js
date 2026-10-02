@@ -4,6 +4,7 @@
 import { html, render } from './lib.js';
 import { newCount, normalizeCount, newSection, norm, clone, firstOpenStage } from './model.js';
 import { SECTION_NAMES, DRYWALL_TYPES, SHEET_SIZES, SCREW_TYPES, SPECIAL_FEATURES } from './choices.js';
+import { t, setUiLang, canon } from './i18n.js';
 
 const KEY = {
   index: 'dc.index',
@@ -34,7 +35,8 @@ function write(key, val) {
 
 export const app = {
   counts: {},
-  settings: { recipient: 'Mom', counter: '', company: '', ...read(KEY.settings, {}) },
+  // lang: app language (unset until he picks one). sheetLang: what Mom gets.
+  settings: { recipient: 'Mom', counter: '', company: '', sheetLang: 'en', ...read(KEY.settings, {}) },
   learned: read(KEY.learned, {}),
   ui: {
     screen: 'home', // home | flow | send | past | settings
@@ -49,6 +51,8 @@ export const app = {
     online: navigator.onLine,
   },
 };
+
+if (app.settings.lang) setUiLang(app.settings.lang);
 
 /* ---------- loading ---------- */
 
@@ -82,7 +86,7 @@ export function flush() {
   ok = write(KEY.index, Object.keys(app.counts)) && ok;
   if (!ok && !saveFailed) {
     saveFailed = true;
-    alert('Your phone storage is full, so the count could not be saved. Delete some old counts in Past Counts.');
+    alert(t('Your phone storage is full, so the count could not be saved. Delete some old counts in Past Counts.'));
   }
   if (ok) saveFailed = false;
 }
@@ -103,6 +107,25 @@ export function saveSettings() {
   rerender();
 }
 
+// One tap: the whole app switches. Nothing typed is lost.
+export function setLanguage(lang, announce = true) {
+  app.settings.lang = lang;
+  setUiLang(lang);
+  saveSettings();
+  if (announce) {
+    app.ui.toast = { id: Date.now(), msg: lang === 'es' ? '🌐 Ahora en Español' : '🌐 Now in English', kind: '' };
+    setTimeout(() => {
+      if (app.ui.toast && app.ui.toast.msg.startsWith('🌐')) setUi({ toast: null });
+    }, 2500);
+  }
+}
+
+// "Mom" unless he changed it (and "Mamá" in Spanish).
+export function recipientName() {
+  const r = (app.settings.recipient || '').trim();
+  return !r || r === 'Mom' ? t('Mom') : r;
+}
+
 /* ---------- rendering ---------- */
 
 let rootEl = null;
@@ -110,6 +133,7 @@ let RootComp = null;
 let queued = false;
 
 export function mount(el, Comp) {
+  el.textContent = ''; // drop the "Loading…" placeholder
   rootEl = el;
   RootComp = Comp;
   rerender();
@@ -257,7 +281,8 @@ const BASE = {
 
 export function learn(cat, value) {
   const v = String(value ?? '').trim();
-  if (!v || BASE[cat].some((b) => norm(b) === norm(v))) return;
+  // Built-in choices (in either language) don't need remembering.
+  if (!v || BASE[cat].some((b) => norm(b) === norm(canon(v)))) return;
   const list = (app.learned[cat] || []).filter((x) => norm(x) !== norm(v));
   list.unshift(v);
   app.learned[cat] = list.slice(0, cat === 'builders' ? 8 : 12);
@@ -272,7 +297,7 @@ export function forgetLearned() {
 
 export const choices = (cat) => [
   ...BASE[cat],
-  ...(app.learned[cat] || []).filter((x) => !BASE[cat].some((b) => norm(b) === norm(x))),
+  ...(app.learned[cat] || []).filter((x) => !BASE[cat].some((b) => norm(b) === norm(canon(x)))),
 ];
 
 /* ---------- misc ---------- */

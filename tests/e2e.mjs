@@ -43,39 +43,57 @@ for (const f of [...walk('js'), ...walk('css'), ...walk('vendor').filter((f) => 
   assert.ok(swList.includes(`'${f}'`), `sw.js is missing ${f}`);
 }
 
-const browser = await chromium.launch();
-const context = await browser.newContext({
-  viewport: { width: 390, height: 844 },
-  deviceScaleFactor: 2,
-  isMobile: true,
-  hasTouch: true,
-  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
-  geolocation: { latitude: 30.267153, longitude: -97.743057, accuracy: 6 },
-  permissions: ['geolocation'],
-});
-await context.route('https://nominatim.openstreetmap.org/**', (route) => route.fulfill({
-  contentType: 'application/json',
-  body: JSON.stringify({ address: { house_number: '123', road: 'Sesame Street', city: 'Austin', state: 'Texas', 'ISO3166-2-lvl4': 'US-TX', postcode: '78701' } }),
-}));
-// Stand-in for the iPhone share sheet: remember what would have been sent.
-await context.addInitScript(() => {
-  navigator.canShare = (d) => !!(d && d.files);
-  navigator.share = async (data) => {
-    const files = await Promise.all((data.files || []).map(async (f) => {
-      const buf = new Uint8Array(await f.arrayBuffer());
-      let bin = '';
-      for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-      return { name: f.name, type: f.type, b64: btoa(bin) };
-    }));
-    window.__shared = window.__shared || [];
-    window.__shared.push({ text: data.text, files });
-  };
-});
+// Every piece of screen text must have a Spanish translation.
+const { missingSpanish } = await import('./i18n-keys.mjs');
+const { missing } = await missingSpanish();
+assert.deepEqual(missing, [], 'text without a Spanish translation (add it to js/es.js)');
 
-const page = await context.newPage();
+const browser = await chromium.launch();
+
+// A fresh simulated iPhone (empty storage), standing at the job site.
+async function newPhone() {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+    geolocation: { latitude: 30.267153, longitude: -97.743057, accuracy: 6 },
+    permissions: ['geolocation'],
+  });
+  await context.route('https://nominatim.openstreetmap.org/**', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ address: { house_number: '123', road: 'Sesame Street', city: 'Austin', state: 'Texas', 'ISO3166-2-lvl4': 'US-TX', postcode: '78701' } }),
+  }));
+  // Stand-in for the iPhone share sheet: remember what would have been sent.
+  await context.addInitScript(() => {
+    navigator.canShare = (d) => !!(d && d.files);
+    navigator.share = async (data) => {
+      const files = await Promise.all((data.files || []).map(async (f) => {
+        const buf = new Uint8Array(await f.arrayBuffer());
+        let bin = '';
+        for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+        return { name: f.name, type: f.type, b64: btoa(bin) };
+      }));
+      window.__shared = window.__shared || [];
+      window.__shared.push({ text: data.text, files });
+    };
+  });
+  const p = await context.newPage();
+  p.on('pageerror', (e) => errors.push(String(e)));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  return { context, page: p };
+}
+
 const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
-page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+let { context, page } = await newPhone();
+// On any failure, save what the screen looked like.
+process.on('uncaughtException', async (e) => {
+  console.error(e);
+  await page.screenshot({ path: path.join(OUT, 'FAILED.png') }).catch(() => {});
+  process.exit(1);
+});
+process.on('unhandledRejection', (e) => process.emit('uncaughtException', e));
 
 let shot = 0;
 const snap = async (name) => {
@@ -96,6 +114,10 @@ const dialogTitle = () => page.locator('.dialog h2').textContent();
 const area = (n) => page.locator('section.section').nth(n);
 
 await page.goto(BASE);
+// First launch asks for the language.
+await page.waitForSelector('.btn-lang');
+await snap('language-picker');
+await page.getByRole('button', { name: 'English', exact: true }).click();
 await page.waitForSelector('.btn-start');
 await snap('home');
 
@@ -425,6 +447,124 @@ const offlineSheet = await page.evaluate(async () => {
 assert.match(offlineSheet, /SUPPLIED BY BUILDER/);
 assert.match(offlineSheet, /Map pin: 30\.26715, -97\.74306/);
 await context.setOffline(false);
+
+/* ---- Dad works in Spanish; Mom still gets English ---- */
+({ context, page } = await newPhone());
+await page.goto(BASE);
+await page.getByRole('button', { name: 'Español', exact: true }).click();
+await page.waitForSelector('.btn-start');
+assert.equal(await page.locator('.btn-start').textContent(), 'EMPEZAR CONTEO');
+assert.equal(await page.locator('html').getAttribute('lang'), 'es');
+await snap('es-home');
+await tap('EMPEZAR CONTEO');
+await page.fill('#builder', 'Constructora García');
+await tap(/Poner pin donde estoy/);
+await page.waitForFunction(() => document.querySelector('#address').value.includes('Sesame'));
+await tap(/Siguiente: Empezar a Contar/);
+await area(0).getByRole('button', { name: 'Cocina', exact: true }).click();
+assert.equal(await area(0).locator('input.input.big').inputValue(), 'Cocina');
+await area(0).getByRole('button', { name: '1/2" Normal', exact: true }).click();
+await area(0).getByRole('button', { name: '4x12', exact: true }).click();
+await area(0).locator('.step-input').fill('25');
+await snap('es-area');
+await tap('✅ Terminar Cocina');
+assert.equal(await dialogTitle(), '¿Seguro que quieres terminar Cocina?');
+await snap('es-verify');
+await answer('Sí, ya está terminado');
+assert.equal(await dialogTitle(), '¿Tienes alguna nota para Cocina?');
+await answer('No, sin notas');
+assert.equal(await dialogTitle(), 'Listo: Cocina');
+await answer('OK');
+
+await tap('+ Agregar otra área');
+await area(1).getByRole('button', { name: 'Recámara', exact: true }).click();
+await area(1).getByRole('button', { name: '5/8" Tipo X (Fuego)', exact: true }).click();
+await area(1).getByRole('button', { name: '4x8', exact: true }).click();
+await area(1).locator('.step-input').fill('8');
+
+// One tap to English in the middle of an area: nothing is lost.
+await page.locator('.flow-head').getByRole('button', { name: 'Switch to English' }).click();
+assert.ok(await page.getByRole('heading', { name: 'Drywall Count' }).isVisible());
+assert.equal(await area(1).locator('.step-input').inputValue(), '8');
+assert.match(await area(0).locator('h3').textContent(), /Kitchen/);
+assert.equal(await area(1).getByRole('button', { name: '5/8" Type X (Fire)', exact: true }).getAttribute('aria-pressed'), 'true');
+await snap('es-now-english');
+await page.locator('.flow-head').getByRole('button', { name: 'Cambiar a Español' }).click();
+assert.ok(await page.getByRole('heading', { name: 'Conteo de Drywall' }).isVisible());
+
+await tap('✅ Terminar Recámara');
+await answer('Sí, ya está terminado');
+await answer('No, sin notas');
+await answer('OK');
+await tap('✅ Ya está contado todo el drywall');
+assert.equal(await dialogTitle(), '¿Ya está contado TODO el drywall? ¿Todas las áreas de la casa?');
+await answer('Sí, ya está terminado');
+await answer('No, sin notas');
+await answer('OK');
+
+await tap(/El CONSTRUCTOR pone los tornillos/);
+await answer('Sí, el constructor los pone');
+await tap('✅ Ya están los tornillos');
+await answer('Sí, ya está terminado');
+await answer('No, sin notas');
+await answer('OK');
+
+await page.waitForSelector('#card-ceiling');
+await card('ceiling').getByRole('button', { name: '9 pies' }).click();
+await card('ceiling').getByRole('button', { name: 'No', exact: true }).click();
+await card('scaffold').getByRole('button', { name: 'No', exact: true }).click();
+await card('power').getByRole('button', { name: 'No', exact: true }).click();
+await card('power').getByRole('button', { name: /Nosotros llevamos generador/ }).click();
+await card('water').getByRole('button', { name: 'Sí', exact: true }).click();
+await card('features').getByRole('button', { name: 'Sí', exact: true }).click();
+await card('features').getByRole('button', { name: 'Rotonda', exact: true }).click();
+await card('features').getByRole('button', { name: 'Recámara' }).click();
+await card('trim').getByRole('button', { name: 'No', exact: true }).first().click();
+await card('trim').getByRole('button', { name: 'No', exact: true }).nth(1).click();
+await card('prerock').getByRole('button', { name: 'No', exact: true }).click();
+await snap('es-site');
+await tap('✅ Ya está la revisión del sitio');
+await answer('Sí, ya está terminado');
+await answer('Sí, agregar una nota');
+await page.fill('.dialog textarea', 'El código de la puerta es 4321');
+await answer('Guardar nota');
+await answer('OK');
+
+await page.waitForSelector('canvas.sheet-canvas');
+assert.ok(await page.getByText('(La hoja está en inglés.)').isVisible());
+await snap('es-review');
+await tap('✅ Terminar Conteo');
+await answer('Sí, terminar el conteo');
+await page.waitForSelector('.btn-send');
+await snap('es-send');
+await tap(/Enviar a Mamá/);
+await page.waitForSelector('.banner-ok');
+const sharedEs = (await page.evaluate(() => window.__shared))[0];
+assert.match(sharedEs.text, /^This is the drywall count for Constructora García at 123 Sesame Street/);
+assert.equal(sharedEs.files[0].name, 'Drywall Count - Constructora García - 123 Sesame Street.pdf');
+const esPdf = path.join(OUT, 'es-sent.pdf');
+fs.writeFileSync(esPdf, Buffer.from(sharedEs.files[0].b64, 'base64'));
+const { execFileSync } = await import('node:child_process');
+const pdfText = execFileSync('pdftotext', ['-layout', esPdf, '-']).toString();
+for (const word of ['Kitchen', 'Bedroom', '1/2" Regular', '5/8" Type X (Fire)', 'Rotunda - Bedroom', 'WE bring a generator', 'SUPPLIED BY BUILDER', 'Constructora García']) {
+  assert.ok(pdfText.includes(word), `English sheet should say "${word}"`);
+}
+for (const word of ['Cocina', 'Recámara', 'Fuego']) assert.ok(!pdfText.includes(word), `English sheet should not say "${word}"`);
+
+// If Settings asks for a Spanish sheet, the same count comes out in Spanish (accents and all).
+const spanishSheet = await page.evaluate(async () => {
+  const { buildSheet, sheetToPdf, shareText } = await import('./js/sheet.js');
+  const { app } = await import('./js/state.js');
+  const c = app.counts[app.ui.countId];
+  const settings = { ...app.settings, sheetLang: 'es' };
+  return { b64: btoa(sheetToPdf(buildSheet(c, settings)).output()), text: shareText(c, settings) };
+});
+fs.writeFileSync(path.join(OUT, 'es-sheet-in-spanish.pdf'), Buffer.from(spanishSheet.b64, 'base64'));
+const esText = execFileSync('pdftotext', ['-layout', path.join(OUT, 'es-sheet-in-spanish.pdf'), '-']).toString();
+for (const word of ['CONTEO DE DRYWALL', 'Cocina', 'Recámara', 'MATERIAL PARA PEDIR', 'NOSOTROS llevamos generador', 'LOS PONE EL CONSTRUCTOR']) {
+  assert.ok(esText.includes(word), `Spanish sheet should say "${word}"`);
+}
+assert.match(spanishSheet.text, /^Este es el conteo de drywall de Constructora García/);
 
 assert.deepEqual(errors, [], 'no errors in the browser console');
 await browser.close();

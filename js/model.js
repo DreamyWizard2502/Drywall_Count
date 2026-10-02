@@ -2,6 +2,7 @@
 // on their own whether something is "done" — they ask this file.
 
 import { SCAFFOLD_OVER_FT } from './choices.js';
+import { t, tr, trn, mark, tv, tvIn, canon, uiLang, locale } from './i18n.js';
 
 export const uid = () =>
   Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
@@ -12,14 +13,13 @@ export const num = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 export const clone = (o) => JSON.parse(JSON.stringify(o));
-export const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
 
 export const STAGES = [
-  { key: 'job', label: 'Job', title: 'Builder & Address' },
-  { key: 'drywall', label: 'Drywall', title: 'Drywall Count' },
-  { key: 'screws', label: 'Screws', title: 'Screws' },
-  { key: 'site', label: 'Site', title: 'Job Site Check' },
-  { key: 'review', label: 'Sheet', title: 'Count Sheet' },
+  { key: 'job', label: mark('Job'), title: mark('Builder & Address') },
+  { key: 'drywall', label: mark('Drywall'), title: mark('Drywall Count') },
+  { key: 'screws', label: mark('Screws'), title: mark('Screws') },
+  { key: 'site', label: mark('Site'), title: mark('Job Site Check') },
+  { key: 'review', label: mark('Sheet'), title: mark('Count Sheet') },
 ];
 export const WORK_STAGES = ['job', 'drywall', 'screws', 'site'];
 
@@ -76,9 +76,9 @@ const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 /* ---------- small helpers ---------- */
 
 export const sectionById = (c, id) => c.sections.find((s) => s.id === id);
-export const sectionName = (c, id) => sectionById(c, id)?.name || '(deleted area)';
-export const sectionTotal = (s) => s.lines.reduce((t, l) => t + num(l.qty), 0);
-export const totalSheets = (c) => c.sections.reduce((t, s) => t + sectionTotal(s), 0);
+export const sectionName = (c, id, lang = uiLang()) => tvIn(lang, sectionById(c, id)?.name) || tr(lang, '(deleted area)');
+export const sectionTotal = (s) => s.lines.reduce((sum, l) => sum + num(l.qty), 0);
+export const totalSheets = (c) => c.sections.reduce((sum, s) => sum + sectionTotal(s), 0);
 export const isBlankSection = (s) =>
   !s.name.trim() && !s.note.trim() && s.lines.every((l) => !l.type && !l.size && !num(l.qty));
 
@@ -87,8 +87,8 @@ export function drywallTotals(c) {
   for (const s of c.sections) {
     for (const l of s.lines) {
       if (!l.type.trim() || !l.size.trim() || num(l.qty) < 1) continue;
-      const k = norm(l.type) + '|' + norm(l.size);
-      const row = map.get(k) || { type: l.type.trim(), size: l.size.trim(), qty: 0 };
+      const k = norm(canon(l.type)) + '|' + norm(l.size);
+      const row = map.get(k) || { type: canon(l.type), size: l.size.trim(), qty: 0 };
       row.qty += num(l.qty);
       map.set(k, row);
     }
@@ -103,9 +103,9 @@ export function mapUrl(c) {
   return a ? `https://maps.google.com/?q=${encodeURIComponent(a)}` : '';
 }
 
-export const fmtFt = (h) => {
-  const t = String(h ?? '').trim();
-  return /^\d+(\.\d+)?$/.test(t) ? `${t} ft` : t;
+export const fmtFt = (h, lang = uiLang()) => {
+  const v = String(h ?? '').trim();
+  return /^\d+(\.\d+)?$/.test(v) ? tr(lang, '{n} ft', { n: v }) : v;
 };
 // "18" -> 18, "12-20 vaulted" -> 20, "" -> null
 export function parseFeet(str) {
@@ -113,10 +113,10 @@ export function parseFeet(str) {
   return nums ? Math.max(...nums.map(Number)) : null;
 }
 
-export function standardCeiling(c) {
+export function standardCeiling(c, lang = uiLang()) {
   const ce = c.site.ceiling;
-  if (ce.standard === 'other') return ce.standardOther.trim() ? fmtFt(ce.standardOther) : null;
-  return ce.standard ? fmtFt(ce.standard) : null;
+  if (ce.standard === 'other') return ce.standardOther.trim() ? fmtFt(ce.standardOther, lang) : null;
+  return ce.standard ? fmtFt(ce.standard, lang) : null;
 }
 
 // Areas whose ceiling height is set apart from the standard.
@@ -128,9 +128,9 @@ export function specialCeilings(c) {
     .map((s) => ({ id: s.id, name: s.name, height: ce.special[s.id], feet: parseFeet(ce.special[s.id]) }));
 }
 
-export function ceilingFor(c, sectionId) {
+export function ceilingFor(c, sectionId, lang = uiLang()) {
   const sp = specialCeilings(c).find((x) => x.id === sectionId);
-  return sp ? fmtFt(sp.height) : null;
+  return sp ? fmtFt(sp.height, lang) : null;
 }
 
 // Everything over 10 ft: these are what make scaffolding necessary.
@@ -138,7 +138,7 @@ export function tallAreas(c) {
   const out = [];
   const ce = c.site.ceiling;
   if (ce.standard === 'other' && parseFeet(ce.standardOther) > SCAFFOLD_OVER_FT) {
-    out.push({ id: null, name: 'Whole house (standard)', height: ce.standardOther });
+    out.push({ id: null, name: t('Whole house (standard)'), height: ce.standardOther });
   }
   for (const sp of specialCeilings(c)) if (sp.feet > SCAFFOLD_OVER_FT) out.push(sp);
   return out;
@@ -148,11 +148,11 @@ export function tallAreas(c) {
 export function sectionRefs(c, id) {
   const refs = [];
   const st = c.site;
-  if (st.ceiling.special[id] !== undefined) refs.push('Ceiling height');
-  if (st.scaffold.items.some((i) => i.sectionIds.includes(id))) refs.push('Scaffolding');
-  if (st.features.items.some((f) => f.sectionId === id)) refs.push('Special features');
-  if (st.prerock.sectionIds.includes(id)) refs.push('Pre-rock');
-  if (c.screws.items.some((i) => i.sectionIds.includes(id))) refs.push('Screws');
+  if (st.ceiling.special[id] !== undefined) refs.push(t('Ceiling height'));
+  if (st.scaffold.items.some((i) => i.sectionIds.includes(id))) refs.push(t('Scaffolding'));
+  if (st.features.items.some((f) => f.sectionId === id)) refs.push(t('Special features'));
+  if (st.prerock.sectionIds.includes(id)) refs.push(t('Pre-rock'));
+  if (c.screws.items.some((i) => i.sectionIds.includes(id))) refs.push(t('Screws'));
   return refs;
 }
 
@@ -176,29 +176,29 @@ export function removeSection(c, id) {
 
 export function jobIssues(c) {
   const out = [];
-  if (!c.job.builder.trim()) out.push({ key: 'builder', msg: 'Builder / client name' });
-  if (!c.job.address.trim()) out.push({ key: 'address', msg: 'Job address' });
+  if (!c.job.builder.trim()) out.push({ key: 'builder', msg: t('Builder / client name') });
+  if (!c.job.address.trim()) out.push({ key: 'address', msg: t('Job address') });
   return out;
 }
 
 export function sectionIssues(c, s) {
   const out = [];
   const name = s.name.trim();
-  if (!name) out.push({ key: `${s.id}:name`, msg: 'Name this area first' });
-  else if (c.sections.some((o) => o.id !== s.id && norm(o.name) === norm(name))) {
-    out.push({ key: `${s.id}:name`, msg: `You already have an area called "${name}". Give this one a different name, like "${name} 2".` });
+  if (!name) out.push({ key: `${s.id}:name`, msg: t('Name this area first') });
+  else if (c.sections.some((o) => o.id !== s.id && norm(canon(o.name)) === norm(canon(name)))) {
+    out.push({ key: `${s.id}:name`, msg: t('You already have an area called “{name}”. Give this one a different name, like “{name} 2”.', { name }) });
   }
-  if (!s.lines.length) out.push({ key: `${s.id}:lines`, msg: 'Add at least one drywall type' });
+  if (!s.lines.length) out.push({ key: `${s.id}:lines`, msg: t('Add at least one drywall type') });
   const multi = s.lines.length > 1;
   const seen = new Set();
   s.lines.forEach((l, i) => {
-    const n = multi ? ` (drywall #${i + 1})` : '';
-    if (!l.type.trim()) out.push({ key: `${l.id}:type`, msg: `Pick the drywall type${n}` });
-    if (!l.size.trim()) out.push({ key: `${l.id}:size`, msg: `Pick the sheet size${n}` });
-    if (num(l.qty) < 1) out.push({ key: `${l.id}:qty`, msg: `Enter how many sheets${n}` });
+    const n = multi ? t(' (drywall #{n})', { n: i + 1 }) : '';
+    if (!l.type.trim()) out.push({ key: `${l.id}:type`, msg: t('Pick the drywall type') + n });
+    if (!l.size.trim()) out.push({ key: `${l.id}:size`, msg: t('Pick the sheet size') + n });
+    if (num(l.qty) < 1) out.push({ key: `${l.id}:qty`, msg: t('Enter how many sheets') + n });
     if (l.type.trim() && l.size.trim()) {
-      const k = norm(l.type) + '|' + norm(l.size);
-      if (seen.has(k)) out.push({ key: `${l.id}:type`, msg: `${l.type} ${l.size} is listed twice in this area. Put them together on one line.` });
+      const k = norm(canon(l.type)) + '|' + norm(l.size);
+      if (seen.has(k)) out.push({ key: `${l.id}:type`, msg: t('{type} {size} is listed twice in this area. Put them together on one line.', { type: tv(l.type), size: l.size }) });
       seen.add(k);
     }
   });
@@ -207,26 +207,27 @@ export function sectionIssues(c, s) {
 
 export function drywallIssues(c) {
   const out = [];
-  if (!c.sections.length) out.push({ key: 'sections', msg: 'Count at least one area' });
+  if (!c.sections.length) out.push({ key: 'sections', msg: t('Count at least one area') });
   const open = c.sections.find((s) => !s.done);
-  if (open) out.push({ key: 'open', msg: `Finish "${open.name.trim() || 'the open area'}" first` });
+  if (open) out.push({ key: 'open', msg: t('Finish “{name}” first', { name: tv(open.name.trim()) || t('the open area') }) });
   return out;
 }
 
 export function screwIssues(c) {
   const out = [];
   const sc = c.screws;
-  if (!sc.supplier) out.push({ key: 'supplier', msg: 'Choose who is supplying the screws' });
+  if (!sc.supplier) out.push({ key: 'supplier', msg: t('Choose who is supplying the screws') });
   if (sc.supplier !== 'us') return out;
-  if (!sc.items.length) out.push({ key: 'items', msg: 'Add the screw type' });
+  if (!sc.items.length) out.push({ key: 'items', msg: t('Add the screw type') });
   const seen = new Set();
   sc.items.forEach((it, i) => {
-    const n = sc.items.length > 1 ? ` (screw #${i + 1})` : '';
-    if (!it.type.trim()) out.push({ key: `${it.id}:type`, msg: `Pick the screw type${n}` });
-    else if (seen.has(norm(it.type))) out.push({ key: `${it.id}:type`, msg: `${it.type} is listed twice. Put the boxes together on one line.` });
-    seen.add(norm(it.type));
-    if (num(it.boxes) < 1) out.push({ key: `${it.id}:boxes`, msg: `Enter how many boxes${n}` });
-    if (i > 0 && !it.reason.trim()) out.push({ key: `${it.id}:reason`, msg: `Say why screw #${i + 1} is needed` });
+    const n = sc.items.length > 1 ? t(' (screw #{n})', { n: i + 1 }) : '';
+    const k = norm(canon(it.type));
+    if (!it.type.trim()) out.push({ key: `${it.id}:type`, msg: t('Pick the screw type') + n });
+    else if (seen.has(k)) out.push({ key: `${it.id}:type`, msg: t('{type} is listed twice. Put the boxes together on one line.', { type: tv(it.type) }) });
+    seen.add(k);
+    if (num(it.boxes) < 1) out.push({ key: `${it.id}:boxes`, msg: t('Enter how many boxes') + n });
+    if (i > 0 && !it.reason.trim()) out.push({ key: `${it.id}:reason`, msg: t('Say why screw #{n} is needed', { n: i + 1 }) });
   });
   return out;
 }
@@ -238,61 +239,61 @@ export function siteIssues(c) {
   const add = (card, key, msg) => out.push({ card, key, msg });
 
   const ce = st.ceiling;
-  if (!ce.standard) add('ceiling', 'ceiling.standard', 'Pick the standard ceiling height');
-  else if (ce.standard === 'other' && !parseFeet(ce.standardOther)) add('ceiling', 'ceiling.standardOther', 'Type the standard ceiling height');
-  if (ce.hasSpecial === null) add('ceiling', 'ceiling.hasSpecial', 'Answer: any areas with a special ceiling height?');
+  if (!ce.standard) add('ceiling', 'ceiling.standard', t('Pick the standard ceiling height'));
+  else if (ce.standard === 'other' && !parseFeet(ce.standardOther)) add('ceiling', 'ceiling.standardOther', t('Type the standard ceiling height'));
+  if (ce.hasSpecial === null) add('ceiling', 'ceiling.hasSpecial', t('Answer: any areas with a special ceiling height?'));
   if (ce.hasSpecial === true) {
     const sp = specialCeilings(c);
-    if (!sp.length) add('ceiling', 'ceiling.special', 'Tap the areas that have a special ceiling height');
-    sp.forEach((x) => !x.feet && add('ceiling', `ceiling.special.${x.id}`, `Type the ceiling height for ${x.name}`));
+    if (!sp.length) add('ceiling', 'ceiling.special', t('Tap the areas that have a special ceiling height'));
+    sp.forEach((x) => !x.feet && add('ceiling', `ceiling.special.${x.id}`, t('Type the ceiling height for {name}', { name: tv(x.name) })));
   }
 
   const sf = st.scaffold;
-  if (sf.needed === null) add('scaffold', 'scaffold.needed', 'Answer: will scaffolding be needed?');
+  if (sf.needed === null) add('scaffold', 'scaffold.needed', t('Answer: will scaffolding be needed?'));
   if (sf.needed === true) {
-    if (!sf.items.length) add('scaffold', 'scaffold.items', 'Add the scaffolding');
+    if (!sf.items.length) add('scaffold', 'scaffold.items', t('Add the scaffolding'));
     sf.items.forEach((it, i) => {
-      const n = sf.items.length > 1 ? ` (scaffold #${i + 1})` : '';
-      if (!it.kind) add('scaffold', `${it.id}:kind`, `Pick the type of scaffold${n}`);
-      if (num(it.qty) < 1) add('scaffold', `${it.id}:qty`, `Enter how many${n}`);
-      if (!it.sectionIds.length) add('scaffold', `${it.id}:areas`, `Tap which areas need the scaffold${n}`);
+      const n = sf.items.length > 1 ? t(' (scaffold #{n})', { n: i + 1 }) : '';
+      if (!it.kind) add('scaffold', `${it.id}:kind`, t('Pick the type of scaffold') + n);
+      if (num(it.qty) < 1) add('scaffold', `${it.id}:qty`, t('Enter how many') + n);
+      if (!it.sectionIds.length) add('scaffold', `${it.id}:areas`, t('Tap which areas need the scaffold') + n);
     });
   }
 
-  if (st.power.has === null) add('power', 'power.has', 'Answer: does the house have electricity?');
-  if (st.power.has === false && !st.power.by) add('power', 'power.by', 'Choose who is supplying power');
+  if (st.power.has === null) add('power', 'power.has', t('Answer: does the house have electricity?'));
+  if (st.power.has === false && !st.power.by) add('power', 'power.by', t('Choose who is supplying power'));
 
-  if (st.water.has === null) add('water', 'water.has', 'Answer: is there water for the mud?');
-  if (st.water.has === false && !st.water.by) add('water', 'water.by', 'Choose who is bringing water');
+  if (st.water.has === null) add('water', 'water.has', t('Answer: is there water for the mud?'));
+  if (st.water.has === false && !st.water.by) add('water', 'water.by', t('Choose who is bringing water'));
 
   const fe = st.features;
-  if (fe.has === null) add('features', 'features.has', 'Answer: any special features?');
+  if (fe.has === null) add('features', 'features.has', t('Answer: any special features?'));
   if (fe.has === true) {
-    if (!fe.items.length) add('features', 'features.items', 'Add the special feature');
+    if (!fe.items.length) add('features', 'features.items', t('Add the special feature'));
     fe.items.forEach((f, i) => {
-      const n = fe.items.length > 1 ? ` (feature #${i + 1})` : '';
-      if (!f.name.trim()) add('features', `${f.id}:name`, `Say what the special feature is${n}`);
-      if (!f.sectionId || !sectionById(c, f.sectionId)) add('features', `${f.id}:area`, `Tap which area the feature is in${n}`);
+      const n = fe.items.length > 1 ? t(' (feature #{n})', { n: i + 1 }) : '';
+      if (!f.name.trim()) add('features', `${f.id}:name`, t('Say what the special feature is') + n);
+      if (!f.sectionId || !sectionById(c, f.sectionId)) add('features', `${f.id}:area`, t('Tap which area the feature is in') + n);
     });
   }
 
-  if (st.bullnose.needed === null) add('trim', 'bullnose.needed', 'Answer: is bullnose required?');
-  if (st.windowWrap.needed === null) add('trim', 'windowWrap.needed', 'Answer: are the windows being wrapped?');
+  if (st.bullnose.needed === null) add('trim', 'bullnose.needed', t('Answer: is bullnose required?'));
+  if (st.windowWrap.needed === null) add('trim', 'windowWrap.needed', t('Answer: are the windows being wrapped?'));
 
   const pr = st.prerock;
-  if (pr.needed === null) add('prerock', 'prerock.needed', 'Answer: is pre-rock needed?');
-  if (pr.needed === true && !pr.sectionIds.length && !pr.other.trim()) add('prerock', 'prerock.areas', 'Tap which areas need pre-rock');
+  if (pr.needed === null) add('prerock', 'prerock.needed', t('Answer: is pre-rock needed?'));
+  if (pr.needed === true && !pr.sectionIds.length && !pr.other.trim()) add('prerock', 'prerock.areas', t('Tap which areas need pre-rock'));
   return out;
 }
 
 export const SITE_CARDS = [
-  { key: 'ceiling', title: 'Ceiling Height' },
-  { key: 'scaffold', title: 'Scaffolding' },
-  { key: 'power', title: 'Electricity' },
-  { key: 'water', title: 'Water for Mud' },
-  { key: 'features', title: 'Special Features' },
-  { key: 'trim', title: 'Bullnose & Windows' },
-  { key: 'prerock', title: 'Pre-Rock' },
+  { key: 'ceiling', title: mark('Ceiling Height') },
+  { key: 'scaffold', title: mark('Scaffolding') },
+  { key: 'power', title: mark('Electricity') },
+  { key: 'water', title: mark('Water for Mud') },
+  { key: 'features', title: mark('Special Features') },
+  { key: 'trim', title: mark('Bullnose & Windows') },
+  { key: 'prerock', title: mark('Pre-Rock') },
 ];
 
 export function stageIssues(c, key) {
@@ -326,8 +327,8 @@ export function nextStage(c, key) {
 // Label for the button that moves on from `key`.
 export function nextLabel(c, key) {
   const next = nextStage(c, key);
-  if (next === 'review') return '📄 Back to Count Sheet';
-  return `Next: ${STAGES.find((s) => s.key === next).title} →`;
+  if (next === 'review') return t('📄 Back to Count Sheet');
+  return t('Next: {title} →', { title: t(STAGES.find((s) => s.key === next).title) });
 }
 
 // Where to land if the requested stage isn't open yet.
@@ -337,100 +338,101 @@ export function firstOpenStage(c) {
 
 /* ---------- plain-language rows used by both the screens and the PDF ---------- */
 
-export function lineText(l) {
-  return `${l.type.trim()}  ${l.size.trim()}`;
-}
-
-export function screwRows(c) {
+export function screwRows(c, lang = uiLang()) {
   const sc = c.screws;
   if (sc.supplier === 'builder') return { builder: true, rows: [] };
   if (sc.supplier !== 'us') return { missing: true, rows: [] };
   return {
     rows: sc.items.map((it, i) => ({
       boxes: num(it.boxes),
-      type: it.type.trim(),
+      type: tvIn(lang, it.type.trim()),
       reason: i > 0 ? it.reason.trim() : '',
-      areas: it.sectionIds.map((id) => sectionName(c, id)),
+      areas: it.sectionIds.map((id) => sectionName(c, id, lang)),
     })),
   };
 }
 
 export const totalBoxes = (c) =>
-  c.screws.supplier === 'us' ? c.screws.items.reduce((t, i) => t + num(i.boxes), 0) : 0;
+  c.screws.supplier === 'us' ? c.screws.items.reduce((sum, i) => sum + num(i.boxes), 0) : 0;
 
 export const SCAFFOLD_KINDS = {
-  stack: { label: 'Stackable scaffolding', unit: 'section' },
-  pony: { label: 'Pony scaffold', unit: 'pony scaffold' },
+  stack: { label: mark('Stackable scaffolding'), one: mark('{n} section'), many: mark('{n} sections') },
+  pony: { label: mark('Pony scaffold'), one: mark('{n} pony scaffold'), many: mark('{n} pony scaffolds') },
 };
 
-// [{label, lines[], attention, missing}]
-export function siteRows(c) {
+// [{label, lines[], attention, missing}] in the given language
+export function siteRows(c, lang = uiLang()) {
   const st = c.site;
-  const names = (ids) => ids.map((id) => sectionName(c, id)).join(', ');
+  const L = (k, v) => tr(lang, k, v);
+  const names = (ids) => ids.map((id) => sectionName(c, id, lang)).join(', ');
   const rows = [];
-  const row = (label, lines, attention = false) => rows.push({ label, lines, attention, missing: !lines.length });
+  const row = (label, lines, attention = false) => rows.push({ label: L(label), lines, attention, missing: !lines.length });
 
   const ce = st.ceiling;
-  const std = standardCeiling(c);
+  const std = standardCeiling(c, lang);
   const ceil = [];
-  if (std) ceil.push(`Standard: ${std}`);
-  if (std && ce.hasSpecial === false) ceil.push('No special heights');
-  for (const sp of specialCeilings(c)) ceil.push(`${sp.name}: ${fmtFt(sp.height) || '?'}`);
-  row('Ceiling height', ceil, tallAreas(c).length > 0);
+  if (std) ceil.push(L('Standard: {h}', { h: std }));
+  if (std && ce.hasSpecial === false) ceil.push(L('No special heights'));
+  for (const sp of specialCeilings(c)) ceil.push(`${tvIn(lang, sp.name)}: ${fmtFt(sp.height, lang) || '?'}`);
+  row(mark('Ceiling height'), ceil, tallAreas(c).length > 0);
 
   const sf = st.scaffold;
-  if (sf.needed === false) row('Scaffolding', ['NO']);
+  if (sf.needed === false) row(mark('Scaffolding'), [L('NO')]);
   else if (sf.needed === true) {
-    row('Scaffolding', ['YES', ...sf.items.map((it) => {
+    row(mark('Scaffolding'), [L('YES'), ...sf.items.map((it) => {
       const k = SCAFFOLD_KINDS[it.kind];
       const q = num(it.qty);
-      let t = k ? `${k.label}: ${plural(q, k.unit)}` : `${q} (type not picked)`;
-      if (it.sectionIds.length) t += ` - ${names(it.sectionIds)}`;
-      if (it.reason.trim()) t += ` (${it.reason.trim()})`;
-      return t;
+      let line = k ? `${L(k.label)}: ${trn(lang, q, k.one, k.many)}` : L('{n} (type not picked)', { n: q });
+      if (it.sectionIds.length) line += ` - ${names(it.sectionIds)}`;
+      if (it.reason.trim()) line += ` (${it.reason.trim()})`;
+      return line;
     })], true);
-  } else row('Scaffolding', []);
+  } else row(mark('Scaffolding'), []);
 
   const pw = st.power;
-  if (pw.has === true) row('Electricity', ['YES - power on site']);
-  else if (pw.has === false) row('Electricity', [`NO - ${pw.by === 'generator' ? 'WE bring a generator' : pw.by === 'builder' ? 'BUILDER supplies power' : 'who supplies power not picked'}`], true);
-  else row('Electricity', []);
+  const pwBy = { generator: mark('NO - WE bring a generator'), builder: mark('NO - BUILDER supplies power') };
+  if (pw.has === true) row(mark('Electricity'), [L('YES - power on site')]);
+  else if (pw.has === false) row(mark('Electricity'), [pwBy[pw.by] ? L(pwBy[pw.by]) : L('NO - who supplies power not picked')], true);
+  else row(mark('Electricity'), []);
 
   const wa = st.water;
-  if (wa.has === true) row('Water for mud', ['YES - water on site']);
-  else if (wa.has === false) row('Water for mud', [`NO - ${wa.by === 'us' ? 'WE bring water' : wa.by === 'builder' ? 'BUILDER supplies water' : 'who brings water not picked'}`], true);
-  else row('Water for mud', []);
+  const waBy = { us: mark('NO - WE bring water'), builder: mark('NO - BUILDER supplies water') };
+  if (wa.has === true) row(mark('Water for mud'), [L('YES - water on site')]);
+  else if (wa.has === false) row(mark('Water for mud'), [waBy[wa.by] ? L(waBy[wa.by]) : L('NO - who brings water not picked')], true);
+  else row(mark('Water for mud'), []);
 
   const fe = st.features;
-  if (fe.has === false) row('Special features', ['NONE']);
+  if (fe.has === false) row(mark('Special features'), [L('NONE')]);
   else if (fe.has === true) {
-    row('Special features', fe.items.map((f) => {
-      let t = f.name.trim() || '(not named)';
-      if (f.sectionId) t += ` - ${sectionName(c, f.sectionId)}`;
-      if (f.note.trim()) t += ` (${f.note.trim()})`;
-      return t;
+    row(mark('Special features'), fe.items.map((f) => {
+      let line = tvIn(lang, f.name.trim()) || L('(not named)');
+      if (f.sectionId) line += ` - ${sectionName(c, f.sectionId, lang)}`;
+      if (f.note.trim()) line += ` (${f.note.trim()})`;
+      return line;
     }), true);
-  } else row('Special features', []);
+  } else row(mark('Special features'), []);
 
   const bn = st.bullnose.needed;
-  row('Bullnose', bn === null ? [] : [bn ? 'YES - bullnose corners' : 'NO'], bn === true);
+  row(mark('Bullnose'), bn === null ? [] : [bn ? L('YES - bullnose corners') : L('NO')], bn === true);
 
   const ww = st.windowWrap;
-  row('Window wrap', ww.needed === null ? [] : [ww.needed ? `YES - wrap windows in drywall${num(ww.count) ? ` (${plural(num(ww.count), 'window')})` : ''}` : 'NO'], ww.needed === true);
+  const wn = num(ww.count);
+  const wrap = wn ? trn(lang, wn, 'YES - wrap windows in drywall ({n} window)', 'YES - wrap windows in drywall ({n} windows)') : L('YES - wrap windows in drywall');
+  row(mark('Window wrap'), ww.needed === null ? [] : [ww.needed ? wrap : L('NO')], ww.needed === true);
 
   const pr = st.prerock;
-  if (pr.needed === false) row('Pre-rock', ['NO']);
+  if (pr.needed === false) row(mark('Pre-rock'), [L('NO')]);
   else if (pr.needed === true) {
     const where = [names(pr.sectionIds), pr.other.trim()].filter(Boolean).join(', ');
-    row('Pre-rock', [`YES${where ? ' - ' + where : ''}`], true);
-  } else row('Pre-rock', []);
+    row(mark('Pre-rock'), [where ? L('YES - {where}', { where }) : L('YES')], true);
+  } else row(mark('Pre-rock'), []);
 
   return rows;
 }
 
-export function fmtDate(ts, withTime = true) {
+export function fmtDate(ts, withTime = true, lang = uiLang()) {
   const d = new Date(ts);
-  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const date = d.toLocaleDateString(locale(lang), { month: 'short', day: 'numeric', year: 'numeric' });
   if (!withTime) return date;
-  return `${date} ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+  return `${date} ${d.toLocaleTimeString(locale(lang), { hour: 'numeric', minute: '2-digit' })}`;
 }

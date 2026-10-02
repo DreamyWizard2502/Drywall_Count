@@ -2,7 +2,8 @@ import { html } from './lib.js';
 import { app, mount, loadAll, current, go, setUi, flush } from './state.js';
 import { DialogHost, ToastHost, navigate, toast } from './ui.js';
 import { STAGES, stageDone, reachable, firstOpenStage } from './model.js';
-import { Home, Past, Settings } from './screens/home.js';
+import { Home, Past, Settings, LanguagePicker, LangButton } from './screens/home.js';
+import { t } from './i18n.js';
 import { JobStage } from './screens/job.js';
 import { DrywallStage } from './screens/drywall.js';
 import { ScrewsStage } from './screens/screws.js';
@@ -18,26 +19,27 @@ function FlowHeader({ c, stage }) {
       <button type="button" class="head-btn" onClick=${() => {
         flush();
         go('home');
-        toast('Saved. Tap “Continue count” to pick up where you left off.');
-      }}>🏠<small>Home</small></button>
+        toast(t('Saved. Tap “Continue count” to pick up where you left off.'));
+      }}>🏠<small>${t('Home')}</small></button>
       <div class="head-title">
-        <b>${c.job.builder.trim() || 'New Count'}</b>
+        <b>${c.job.builder.trim() || t('New Count')}</b>
         <span>${c.job.address.trim()}</span>
       </div>
-      <button type="button" class="head-btn" onClick=${() => setUi({ viewer: true })}>📄<small>Sheet</small></button>
+      <${LangButton} />
+      <button type="button" class="head-btn" onClick=${() => setUi({ viewer: true })}>📄<small>${t('Sheet')}</small></button>
     </div>
-    <nav class="steps" aria-label="Steps">
+    <nav class="steps" aria-label=${t('Steps')}>
       ${STAGES.map((st, i) => {
         const done = st.key !== 'review' && stageDone(c, st.key);
         const can = reachable(c, st.key);
         return html`<button type="button" class=${`step ${st.key === stage ? 'cur' : ''} ${done ? 'done' : ''}`}
           disabled=${!can} aria-current=${st.key === stage ? 'step' : null} onClick=${() => st.key !== stage && navigate(st.key)}>
           <span class="step-dot">${done ? '✓' : i + 1}</span>
-          <span class="step-label">${st.label}</span>
+          <span class="step-label">${t(st.label)}</span>
         </button>`;
       })}
     </nav>
-    ${!app.ui.online && html`<div class="offline-pill">No signal — that’s OK. Everything saves on this phone.</div>`}
+    ${!app.ui.online && html`<div class="offline-pill">${t('No signal — that’s OK. Everything saves on this phone.')}</div>`}
   </header>`;
 }
 
@@ -60,6 +62,7 @@ function Flow() {
 }
 
 function Root() {
+  if (!app.settings.lang) return html`<${LanguagePicker} />`;
   const s = app.ui.screen;
   const screen =
     s === 'flow' ? html`<${Flow} />`

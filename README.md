@@ -4,6 +4,8 @@ An iPhone app for counting drywall on a house, built to be very hard to get wron
 
 It's a web app that you add to the Home Screen. It opens and works like a normal app, without the App Store.
 
+**English and Español.** The first time it opens it asks *English or Español?* with two big buttons. After that, a 🌐 button on every screen switches languages with one tap, and nothing he's typed is lost.
+
 ---
 
 ## Put it on Dad's iPhone (one time)
@@ -23,7 +25,7 @@ It's a web app that you add to the Home Screen. It opens and works like a normal
 
 > ⚠️ Always use the Home Screen icon. Counts are saved inside the installed app. Counts made in a Safari tab are stored separately and won't show up there.
 
-The first time he taps **Drop pin**, the iPhone asks to use his location. Tap **Allow**.
+The first time it opens, tap **English** or **Español**. The first time he taps **Drop pin**, the iPhone asks to use his location. Tap **Allow**.
 
 ---
 
@@ -51,6 +53,13 @@ Tapping **Send to Mom** opens the iPhone share sheet with the PDF attached and t
 
 He taps **Mom** at the top of the share sheet (or Messages), then the blue arrow. iPhones don't let any app send a text by itself, so those two taps are the minimum. Every count is also saved on the phone under **Past Counts**, where he can open or re-send it. **Save a copy to Files** puts the PDF in the Files app.
 
+### Spanish
+
+- **The app** switches with the 🌐 button at the top of every screen, or on the home screen and in Settings.
+- **The count sheet and text message stay in English** by default, even when Dad works in Spanish. If he taps "Cocina" and "1/2" Normal", Mom's sheet says "Kitchen" and "1/2" Regular". The count sheet screen reminds him: *(La hoja está en inglés.)*
+- To send the sheet in Spanish instead, go to **Settings → Count sheet & text message language → Español**.
+- Things he types himself (notes, a custom area name) can't be translated without signal, so they go on the sheet exactly as typed.
+
 ### No signal
 
 Everything works offline: counting, the PDF, saving, and sending (Messages sends it once he has signal again). The only thing that needs signal is turning the GPS pin into a street name. With no signal, the pin is still saved and the address box shows the GPS numbers, which he can type over.
@@ -61,7 +70,8 @@ The street-name lookup uses OpenStreetMap, which is free and needs no account. G
 
 ## Changing things
 
-- **Quick-tap choices** (area names, drywall types, sheet sizes, screws, special features): edit `js/choices.js`. Anything he types that isn't on a list is remembered as a choice for next time (clear it in Settings).
+- **Quick-tap choices** (area names, drywall types, sheet sizes, screws, special features): edit `js/choices.js`, and add the Spanish name to the list at the bottom of `js/i18n.js`.
+- **Wording**: screen text is written in English inside `t('…')`. The Spanish for each one is in `js/es.js`. `node tests/i18n-keys.mjs` lists any text that's missing its Spanish, and the test fails if anything is missing. Anything he types that isn't on a list is remembered as a choice for next time (clear it in Settings).
 - **Settings in the app**: the recipient's name (for the "Send to ___" button), his name ("Counted by" on the sheet), and a company name for the top of the sheet.
 - **After changing any file**, bump `VERSION` in `sw.js` (for example `drywall-count-v2`). Otherwise phones keep the old offline copy. The update arrives the next time he opens the app with signal.
 
@@ -76,8 +86,10 @@ js/model.js         data + every "is this done?" rule
 js/state.js         saving to the phone, navigation
 js/ui.js            pop-up questions, triple verification, inputs
 js/sheet.js         one-page layout -> PDF and on-screen preview
+js/i18n.js          English/Español switching + hot-choice words in both
+js/es.js            Spanish for every piece of screen text
 js/screens/*.js     one file per screen
 tests/e2e.mjs       walks a whole count on a simulated iPhone
 ```
 
-Run locally with `npm start` (http://localhost:8080). Run the end-to-end test with `npm test` (needs Playwright + Chromium). It goes through two complete counts, including offline, checks the PDF is one page, and saves screenshots and the sent PDF to `tests/out/`.
+Run locally with `npm start` (http://localhost:8080). Run the end-to-end test with `npm test` (needs Playwright + Chromium). It goes through three counts: one in English, one fully offline, and one in Spanish (checking that Mom's sheet comes out in English). It also checks the PDF is one page and that every piece of text has Spanish. Screenshots and PDFs are saved to `tests/out/`.
