@@ -2,7 +2,7 @@
 // and works with no signal. Bump VERSION whenever any app file changes so
 // phones pick up the new version the next time they're online.
 
-const VERSION = 'drywall-count-v2';
+const VERSION = 'drywall-count-v3';
 
 const FILES = [
   './',

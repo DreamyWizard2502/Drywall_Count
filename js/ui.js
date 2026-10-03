@@ -201,22 +201,58 @@ export function ChoiceField({ label, value, options, onChange, error, placeholde
   </div>`;
 }
 
+const STEPS = [1, 5, 10];
+const MAX_COUNT = 9999;
+
+// Count control: a big number box (tap it and type any number) with
+// +1 +5 +10 and −1 −5 −10 buttons for fast tallying.
 export function Stepper({ value, onChange, error, label, unit }) {
   const n = num(value);
+  const inputRef = useRef();
+  const justFocused = useRef(false);
+  const set = (v) => onChange(v <= 0 ? '' : Math.min(MAX_COUNT, v));
+  const press = (delta) => {
+    set(n + delta);
+    const el = inputRef.current; // little "pop" so he sees the number change
+    if (el) {
+      el.classList.remove('bump');
+      void el.offsetWidth;
+      el.classList.add('bump');
+    }
+  };
+  // Tapping the box selects the number, so typing replaces it.
+  // (iPhones need the second, delayed select; skip it if he already typed.)
+  const selectAll = (el) => {
+    const before = el.value;
+    el.select();
+    setTimeout(() => {
+      if (document.activeElement === el && el.value === before) el.setSelectionRange(0, el.value.length);
+    }, 0);
+  };
   return html`<div class=${`field ${error ? 'has-error' : ''}`}>
     ${label && html`<div class="label">${label}</div>`}
-    <div class="stepper">
-      <button type="button" class="step-btn" aria-label=${t('One less')} onClick=${() => onChange(Math.max(0, n - 1) || '')}>−</button>
-      <input class="step-input" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="0" value=${value}
-        aria-label=${label || t('How many')} enterkeyhint="done"
-        onFocus=${(e) => e.target.select()}
-        onInput=${(e) => {
-          const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
-          if (digits !== e.target.value) e.target.value = digits;
-          onChange(digits === '' ? '' : parseInt(digits, 10));
-        }} />
-      <button type="button" class="step-btn" aria-label=${t('One more')} onClick=${() => onChange(n + 1)}>+</button>
-      ${unit && html`<span class="step-unit">${unit}</span>`}
+    <div class="tally">
+      <div class="tally-box">
+        <input ref=${inputRef} class="tally-input" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="0"
+          value=${value} aria-label=${label || t('How many')} autocomplete="off" enterkeyhint="done"
+          onFocus=${(e) => { justFocused.current = true; selectAll(e.target); }}
+          onMouseUp=${(e) => { if (justFocused.current) e.preventDefault(); justFocused.current = false; }}
+          onBlur=${() => (justFocused.current = false)}
+          onInput=${(e) => {
+            const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
+            if (digits !== e.target.value) e.target.value = digits;
+            onChange(digits === '' ? '' : parseInt(digits, 10));
+          }} />
+        ${unit && html`<span class="tally-unit">${unit}</span>`}
+      </div>
+      <div class="tally-row">
+        ${STEPS.map((d) => html`<button type="button" class="tally-btn plus" aria-label=${t('Add {n}', { n: d })}
+          onClick=${() => press(d)}>+${d}</button>`)}
+      </div>
+      <div class="tally-row">
+        ${STEPS.map((d) => html`<button type="button" class="tally-btn minus" aria-label=${t('Take away {n}', { n: d })}
+          disabled=${n === 0} onClick=${() => press(-d)}>−${d}</button>`)}
+      </div>
     </div>
     <${FieldError} msg=${error} />
   </div>`;

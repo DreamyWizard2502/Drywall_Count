@@ -19,9 +19,6 @@ const scrollToEl = (sel) =>
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, 60);
 
-const lineSummary = (s) =>
-  s.lines.map((l) => `${num(l.qty)} × ${tv(l.type.trim())} — ${l.size.trim()}`);
-
 function openSection(c) {
   return c.sections.find((s) => !s.done);
 }
@@ -90,19 +87,14 @@ async function deleteSection(c, s) {
   toast(t('{name} deleted', { name }), { undo: () => replaceCount(before) });
 }
 
-async function completeSection(c, s) {
+// One tap saves an area (it can always be reopened with Edit). The three
+// questions are saved for the end of the whole drywall step.
+function completeSection(c, s) {
   const issues = sectionIssues(c, s);
   if (issues.length) {
     toast(issues[0].msg, { kind: 'bad' });
     return showErrors(`sec-${s.id}`);
   }
-  const ok = await tripleVerify({
-    name: areaName(s),
-    summary: html`<${SummaryList} items=${lineSummary(s)} /><p class="muted">${t('{sheets} total', { sheets: sheets(sectionTotal(s)) })}</p>`,
-    getNote: () => s.note,
-    setNote: (note) => update(() => (s.note = note)),
-  });
-  if (!ok) return; // "No" or "Wait, I need to change something": keep editing
   update(() => {
     s.done = true;
     delete s.snap;
@@ -112,6 +104,7 @@ async function completeSection(c, s) {
     learn('drywallTypes', l.type);
     learn('sizes', l.size);
   });
+  toast(t('✅ {name} done — {sheets}', { name: areaName(s), sheets: sheets(sectionTotal(s)) }));
   scrollToEl('#after-sections');
 }
 

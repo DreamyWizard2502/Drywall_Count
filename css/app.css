@@ -249,7 +249,7 @@ h1, h2, h3 { margin: 0; line-height: 1.2; }
 textarea.input { resize: vertical; min-height: 64px; }
 .input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
 .input.big { font-size: 20px; font-weight: 600; }
-.input.err, .has-error > .input, .has-error .stepper .step-input { border-color: var(--red); background: var(--red-soft); }
+.input.err, .has-error > .input { border-color: var(--red); background: var(--red-soft); }
 .input-wrap { position: relative; }
 .input-wrap .input { padding-right: 52px; }
 .input-clear {
@@ -299,32 +299,48 @@ textarea.input { resize: vertical; min-height: 64px; }
 .chip.on .chip-flag { background: rgba(255, 255, 255, 0.25); color: #fff; }
 .has-error .chips .chip:not(.on) { border-color: #f0a29a; }
 
-.stepper { display: flex; align-items: center; gap: 8px; }
-.step-btn {
-  width: 62px;
-  height: 62px;
-  flex: none;
-  border-radius: 14px;
-  border: 0;
-  background: var(--blue-soft);
-  color: var(--blue);
-  font-size: 32px;
-  font-weight: 700;
-  line-height: 1;
-}
-.step-btn:active { background: #cfe0f7; }
-.step-input {
-  width: 96px;
-  height: 62px;
+.tally { display: grid; gap: 8px; }
+.tally-box { position: relative; }
+.tally-input {
+  width: 100%;
+  height: 70px;
+  padding: 0 84px; /* same on both sides keeps the number centered next to the unit */
   text-align: center;
-  font-size: 28px;
+  font-size: 36px;
   font-weight: 800;
   border: 2px solid var(--line);
   border-radius: 14px;
   background: #fff;
+  -webkit-appearance: none;
+  appearance: none;
 }
-.step-input:focus { outline: none; border-color: var(--blue); }
-.step-unit { color: var(--muted); font-weight: 600; }
+.tally-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+.tally-input.bump { animation: bump 0.18s ease-out; }
+@keyframes bump { 50% { transform: scale(1.04); } }
+.tally-unit {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-weight: 700;
+  pointer-events: none;
+}
+.tally-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tally-btn {
+  height: 56px;
+  border-radius: 14px;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+.tally-btn.plus { background: var(--blue-soft); color: var(--blue); border: 2px solid transparent; }
+.tally-btn.plus:active { background: #cfe0f7; }
+.tally-btn.minus { background: #fff; color: var(--red); border: 2px solid var(--red-soft); }
+.tally-btn.minus:active { background: var(--red-soft); }
+.tally-btn:active { transform: scale(0.96); }
+.tally-btn:disabled { opacity: 0.35; transform: none; }
+.has-error .tally-input { border-color: var(--red); background: var(--red-soft); }
 
 .big-choice { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; margin-bottom: 8px; }
 .big-choice.cols-1 { grid-template-columns: 1fr; }

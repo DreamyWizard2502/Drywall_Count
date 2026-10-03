@@ -19,6 +19,7 @@ try {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'tests', 'out');
 fs.mkdirSync(OUT, { recursive: true });
+for (const f of fs.readdirSync(OUT)) fs.rmSync(path.join(OUT, f)); // start clean
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
 const server = http.createServer((req, res) => {
@@ -45,8 +46,9 @@ for (const f of [...walk('js'), ...walk('css'), ...walk('vendor').filter((f) => 
 
 // Every piece of screen text must have a Spanish translation.
 const { missingSpanish } = await import('./i18n-keys.mjs');
-const { missing } = await missingSpanish();
+const { missing, unused } = await missingSpanish();
 assert.deepEqual(missing, [], 'text without a Spanish translation (add it to js/es.js)');
+assert.deepEqual(unused, [], 'Spanish for text the app no longer uses (remove it from js/es.js)');
 
 const browser = await chromium.launch();
 
@@ -112,6 +114,7 @@ const answer = async (name) => {
 };
 const dialogTitle = () => page.locator('.dialog h2').textContent();
 const area = (n) => page.locator('section.section').nth(n);
+const tally = (scope, name) => scope.getByRole('button', { name, exact: true });
 
 await page.goto(BASE);
 // First launch asks for the language.
@@ -138,7 +141,7 @@ assert.equal(await next.getAttribute('aria-disabled'), 'false');
 await snap('job-filled');
 await next.click();
 
-/* ---- drywall: area 1 (Kitchen), with an error first and a note ---- */
+/* ---- drywall: area 1 (Kitchen): fast tally, a note, one-tap save ---- */
 await page.waitForSelector('.section.editing');
 assert.equal(await page.locator('.line').count(), 0, 'cannot count before naming the area');
 assert.ok(await page.getByText('Name this area to start counting').isVisible());
@@ -146,38 +149,44 @@ await snap('area-unnamed');
 await area(0).getByRole('button', { name: 'Kitchen', exact: true }).click();
 assert.equal(await page.locator('.line').count(), 1);
 await area(0).getByRole('button', { name: '1/2" Regular', exact: true }).click();
-await area(0).getByRole('button', { name: 'One more' }).click();
+
+// Fast tally: +10 +10 +5 +1 = 26, then −5 −10 = 11.
+const line1 = area(0).locator('.line').first();
+assert.ok(await tally(line1, 'Take away 1').isDisabled(), 'minus buttons are off at zero');
+for (const b of ['Add 10', 'Add 10', 'Add 5', 'Add 1']) await tally(line1, b).click();
+assert.equal(await line1.locator('.tally-input').inputValue(), '26');
+await tally(line1, 'Take away 5').click();
+await tally(line1, 'Take away 10').click();
+assert.equal(await line1.locator('.tally-input').inputValue(), '11');
+await snap('tally');
+
 await area(0).getByRole('button', { name: /Complete Kitchen/ }).click();
 assert.ok(await page.locator('.has-error').count() > 0, 'missing sheet size is flagged');
-assert.equal(await page.locator('.dialog').count(), 0, 'no verification while something is missing');
+assert.equal(await page.locator('.section.done').count(), 0, 'not saved while something is missing');
 await area(0).getByRole('button', { name: '4x12', exact: true }).click();
-await area(0).locator('.step-input').fill('30');
+
+// Tapping the number box selects the number, so typing replaces it.
+await line1.locator('.tally-input').tap();
+await page.keyboard.type('30');
+assert.equal(await line1.locator('.tally-input').inputValue(), '30');
+
 await tap('+ Add another drywall type');
 const line2 = area(0).locator('.line').nth(1);
 await line2.getByRole('button', { name: '5/8" Type X (Fire)', exact: true }).click();
 await line2.getByRole('button', { name: '4x12', exact: true }).click();
-await line2.locator('.step-input').fill('4');
-await snap('area-kitchen-editing');
-await area(0).getByRole('button', { name: /Complete Kitchen/ }).click();
-assert.match(await dialogTitle(), /Are you sure you want to complete Kitchen/);
-await snap('verify-1');
-await answer('Yes, it’s complete');
-assert.match(await dialogTitle(), /notes for Kitchen/);
-await answer('Yes, add a note');
+await line2.locator('.tally-input').fill('4');
+await tap('📝 Add a note for this area');
 await page.fill('.dialog textarea', 'Ceiling over the island is 5/8');
 await answer('Save note');
-assert.match(await dialogTitle(), /Kitchen complete/);
-await snap('verify-3');
-// "Wait, I need to change something" keeps it open...
-await answer('Wait, I need to change something');
-assert.equal(await page.locator('.section.editing').count(), 1, 'Wait keeps the area open');
-// ...then go through again.
+await snap('area-kitchen-editing');
+
+// One tap saves the area: no questions.
 await area(0).getByRole('button', { name: /Complete Kitchen/ }).click();
-await answer('Yes, it’s complete');
-await answer('No, the note is good');
-await answer('OK');
+assert.equal(await page.locator('.dialog').count(), 0, 'finishing an area asks no questions');
 assert.equal(await page.locator('.section.done').count(), 1);
+assert.match(await page.locator('.toast').textContent(), /Kitchen done — 34 sheets/);
 assert.ok(await btn('+ Add another area').isVisible(), 'add-another appears after completing');
+await snap('area-saved');
 
 /* ---- area 2 (Garage), area 3 (Foyer), area 4 typed by hand ---- */
 async function countArea(i, name, type, size, qty, viaChip = true) {
@@ -186,11 +195,9 @@ async function countArea(i, name, type, size, qty, viaChip = true) {
   else await area(i).locator('input.input.big').fill(name);
   await area(i).getByRole('button', { name: type, exact: true }).click();
   await area(i).getByRole('button', { name: size, exact: true }).click();
-  await area(i).locator('.step-input').fill(String(qty));
+  await area(i).locator('.tally-input').fill(String(qty));
   await area(i).getByRole('button', { name: new RegExp(`Complete ${name}`) }).click();
-  await answer('Yes, it’s complete');
-  await answer('No notes');
-  await answer('OK');
+  assert.equal(await page.locator('.dialog').count(), 0, `${name} saves with one tap`);
 }
 await countArea(1, 'Garage', '5/8" Type X (Fire)', '4x12', 20);
 await countArea(2, 'Foyer', '1/2" Regular', '4x12', 18);
@@ -208,13 +215,25 @@ assert.equal(await page.locator('section.section').count(), 4);
 // Edit a finished area through its corner buttons, then cancel.
 await area(1).getByRole('button', { name: /Edit/ }).click();
 assert.equal(await page.locator('.section.editing').count(), 1);
-await area(1).locator('.step-input').fill('99');
+await area(1).locator('.tally-input').fill('99');
 await area(1).getByRole('button', { name: 'Cancel changes' }).click();
 assert.match(await area(1).textContent(), /20 sheets/);
 
 await snap('areas-done');
+// The big step (drywall -> screws) still gets the three questions.
 await tap('✅ All the drywall is counted');
 assert.match(await dialogTitle(), /Is ALL the drywall counted/);
+await snap('verify-1');
+await answer('Yes, it’s complete');
+assert.match(await dialogTitle(), /notes for the drywall count/);
+await answer('No notes');
+assert.match(await dialogTitle(), /The drywall count complete/);
+await snap('verify-3');
+// "Wait, I need to change something" stays on the drywall step...
+await answer('Wait, I need to change something');
+assert.ok(await page.getByRole('heading', { name: 'Drywall Count' }).isVisible(), 'Wait stays on the drywall step');
+// ...then go through again.
+await tap('✅ All the drywall is counted');
 await answer('Yes, it’s complete');
 await answer('No notes');
 await answer('OK');
@@ -225,11 +244,11 @@ await tap('✅ Screws are complete');
 assert.ok(await page.locator('.has-error').count() > 0);
 await tap(/We are bringing the screws/);
 await page.getByRole('button', { name: '1-1/4" Coarse Thread', exact: true }).click();
-await page.locator('.step-input').first().fill('6');
+await page.locator('.tally-input').first().fill('6');
 await tap('+ Add a different screw type');
 const screw2 = page.locator('.card').filter({ hasText: 'Screw type #2' });
 await screw2.getByRole('button', { name: '1" Fine Thread', exact: true }).click();
-await screw2.locator('.step-input').fill('2');
+await screw2.locator('.tally-input').fill('2');
 await tap('✅ Screws are complete');
 assert.ok(await page.getByText('Say why screw #2 is needed').first().isVisible(), 'second screw type needs a reason');
 await screw2.locator('textarea').fill('Metal studs in the garage');
@@ -252,7 +271,7 @@ await card('scaffold').getByRole('button', { name: 'No', exact: true }).click();
 assert.match(await dialogTitle(), /No scaffolding/);
 await answer('Oops — we need scaffolding');
 await card('scaffold').getByRole('button', { name: /Stackable scaffolding/ }).click();
-await card('scaffold').locator('.step-input').fill('6');
+await card('scaffold').locator('.tally-input').fill('6');
 await card('scaffold').getByRole('button', { name: /Foyer/ }).click();
 await card('power').getByRole('button', { name: 'No', exact: true }).click();
 await card('power').getByRole('button', { name: /bringing a generator/ }).click();
@@ -262,7 +281,7 @@ await card('features').getByRole('button', { name: 'Rotunda', exact: true }).cli
 await card('features').getByRole('button', { name: 'Foyer' }).click();
 await card('trim').getByRole('button', { name: 'Yes', exact: true }).first().click();
 await card('trim').getByRole('button', { name: 'Yes', exact: true }).nth(1).click();
-await card('trim').locator('.step-input').fill('14');
+await card('trim').locator('.tally-input').fill('14');
 await snap('site-partial');
 await tap('✅ Job site check is complete');
 assert.ok(await card('prerock').locator('.error').count() > 0, 'unanswered pre-rock is flagged');
@@ -290,7 +309,7 @@ await tap('✏️ Go back and change something');
 await answer('Screws');
 assert.ok(await page.getByText('Screws is complete').isVisible(), 'finished stage is locked');
 await tap('✏️ Change something here');
-await page.locator('.step-input').first().fill('7');
+await page.locator('.tally-input').first().fill('7');
 await snap('screws-editing');
 await tap('✅ Screws are complete');
 await answer('Yes, it’s complete');
@@ -306,12 +325,10 @@ await tap('+ Add another area');
 await area(4).getByRole('button', { name: 'Office', exact: true }).click();
 await area(4).getByRole('button', { name: '1/2" Regular', exact: true }).click();
 await area(4).getByRole('button', { name: '4x8', exact: true }).click();
-await area(4).getByRole('button', { name: 'One more' }).click();
+await tally(area(4), 'Add 1').click();
 await tap('✅ Complete Office');
-await answer('Yes, it’s complete');
-await answer('No notes');
-await answer('OK');
-assert.ok(await btn('📄 Back to Count Sheet').isVisible(), 'only the new area needed verifying');
+assert.equal(await page.locator('.dialog').count(), 0, 'adding an area later asks no questions');
+assert.ok(await btn('📄 Back to Count Sheet').isVisible(), 'the drywall step stays finished');
 await page.locator('.steps').getByRole('button', { name: /Site/ }).click();
 await tap('✏️ Change something here');
 await card('prerock').getByRole('button', { name: /Garage/ }).click(); // off
@@ -410,11 +427,8 @@ await tap(/Next: Start Counting/);
 await area(0).getByRole('button', { name: 'Bedroom', exact: true }).click();
 await area(0).getByRole('button', { name: '1/2" Regular', exact: true }).click();
 await area(0).getByRole('button', { name: '4x12', exact: true }).click();
-await area(0).getByRole('button', { name: 'One more' }).click();
+await tally(area(0), 'Add 1').click();
 await tap('✅ Complete Bedroom'); // the big bottom button
-await answer('Yes, it’s complete');
-await answer('No notes');
-await answer('OK');
 await tap('✅ All the drywall is counted');
 await answer('Yes, it’s complete');
 await answer('No notes');
@@ -465,27 +479,23 @@ await area(0).getByRole('button', { name: 'Cocina', exact: true }).click();
 assert.equal(await area(0).locator('input.input.big').inputValue(), 'Cocina');
 await area(0).getByRole('button', { name: '1/2" Normal', exact: true }).click();
 await area(0).getByRole('button', { name: '4x12', exact: true }).click();
-await area(0).locator('.step-input').fill('25');
+await area(0).locator('.tally-input').fill('25');
 await snap('es-area');
 await tap('✅ Terminar Cocina');
-assert.equal(await dialogTitle(), '¿Seguro que quieres terminar Cocina?');
-await snap('es-verify');
-await answer('Sí, ya está terminado');
-assert.equal(await dialogTitle(), '¿Tienes alguna nota para Cocina?');
-await answer('No, sin notas');
-assert.equal(await dialogTitle(), 'Listo: Cocina');
-await answer('OK');
+assert.equal(await page.locator('.dialog').count(), 0);
+assert.match(await page.locator('.toast').textContent(), /Listo: Cocina — 25 hojas/);
+assert.equal(await tally(area(0), 'Sumar 5').count(), 0, 'finished areas show no counting buttons');
 
 await tap('+ Agregar otra área');
 await area(1).getByRole('button', { name: 'Recámara', exact: true }).click();
 await area(1).getByRole('button', { name: '5/8" Tipo X (Fuego)', exact: true }).click();
 await area(1).getByRole('button', { name: '4x8', exact: true }).click();
-await area(1).locator('.step-input').fill('8');
+await area(1).locator('.tally-input').fill('8');
 
 // One tap to English in the middle of an area: nothing is lost.
 await page.locator('.flow-head').getByRole('button', { name: 'Switch to English' }).click();
 assert.ok(await page.getByRole('heading', { name: 'Drywall Count' }).isVisible());
-assert.equal(await area(1).locator('.step-input').inputValue(), '8');
+assert.equal(await area(1).locator('.tally-input').inputValue(), '8');
 assert.match(await area(0).locator('h3').textContent(), /Kitchen/);
 assert.equal(await area(1).getByRole('button', { name: '5/8" Type X (Fire)', exact: true }).getAttribute('aria-pressed'), 'true');
 await snap('es-now-english');
@@ -493,13 +503,13 @@ await page.locator('.flow-head').getByRole('button', { name: 'Cambiar a Español
 assert.ok(await page.getByRole('heading', { name: 'Conteo de Drywall' }).isVisible());
 
 await tap('✅ Terminar Recámara');
-await answer('Sí, ya está terminado');
-await answer('No, sin notas');
-await answer('OK');
 await tap('✅ Ya está contado todo el drywall');
 assert.equal(await dialogTitle(), '¿Ya está contado TODO el drywall? ¿Todas las áreas de la casa?');
+await snap('es-verify');
 await answer('Sí, ya está terminado');
+assert.equal(await dialogTitle(), '¿Tienes alguna nota para el conteo de drywall?');
 await answer('No, sin notas');
+assert.equal(await dialogTitle(), 'Listo: El conteo de drywall');
 await answer('OK');
 
 await tap(/El CONSTRUCTOR pone los tornillos/);
